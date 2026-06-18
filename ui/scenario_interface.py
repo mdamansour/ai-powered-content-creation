@@ -4,9 +4,11 @@ Scenario design interface UI components.
 import streamlit as st
 import asyncio
 from typing import Dict, Optional, List, Any
+from pathlib import Path
 from core.scenario_generator import ScenarioGenerator
 from core.script_generator import ScriptGenerator
 from utils.model_selector import ModelSelector
+from visualization import VisualizationManager, RenderQuality
 
 
 class ScenarioInterface:
@@ -130,16 +132,44 @@ class ScenarioInterface:
         generator = ScenarioGenerator()
         validation = generator.validate_scenario(scenario)
         
+        # Also validate visualizations
+        viz_manager = VisualizationManager()
+        scenes = scenario.get("scenes", [])
+        viz_validations = [viz_manager.validate_scene(scene) for scene in scenes]
+        viz_errors = sum(1 for v in viz_validations if not v["valid"])
+        viz_warnings = sum(len(v.get("warnings", [])) for v in viz_validations)
+        
+        # Display validation results
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if validation["valid"]:
+                st.success("✅ Scenario Valid")
+            else:
+                st.error("❌ Scenario Errors")
+        with col2:
+            if viz_errors == 0:
+                st.success("✅ All Scenes Valid")
+            else:
+                st.error(f"❌ {viz_errors} Scene Errors")
+        with col3:
+            if viz_warnings > 0:
+                st.warning(f"⚠️ {viz_warnings} Warnings")
+            else:
+                st.success("✅ No Warnings")
+        
+        # Show detailed errors/warnings
         if not validation["valid"]:
-            st.error("⚠️ Scenario has errors:")
-            for error in validation.get("errors", []):
-                st.write(f"- {error}")
-        elif validation["warnings"]:
-            with st.expander("⚠️ Warnings"):
-                for warning in validation["warnings"]:
-                    st.write(f"- {warning}")
-        else:
-            st.success("✅ Scenario is valid")
+            with st.expander("⚠️ Scenario Errors"):
+                for error in validation.get("errors", []):
+                    st.write(f"- {error}")
+        
+        if validation.get("warnings") or viz_warnings > 0:
+            with st.expander("⚠️ All Warnings"):
+                for warning in validation.get("warnings", []):
+                    st.write(f"- Scenario: {warning}")
+                for i, v in enumerate(viz_validations, 1):
+                    for warning in v.get("warnings", []):
+                        st.write(f"- Scene {i}: {warning}")
         
         # Overview
         scenes = scenario.get("scenes", [])
@@ -182,16 +212,34 @@ class ScenarioInterface:
                         key=f"duration_{i}"
                     )
                 
-                # Visualization type
+                # Visualization type with features
+                viz_options = ["manim", "matplotlib", "plotly"]
                 viz_type = st.selectbox(
                     "Visualization Type",
-                    ["manim", "matplotlib", "plotly"],
-                    index=["manim", "matplotlib", "plotly"].index(
+                    viz_options,
+                    index=viz_options.index(
                         scene.get("visualization_type", "manim").lower()
                     ),
                     key=f"viz_{i}",
                     help="Manim: Math animations | Matplotlib: Graphs | Plotly: 3D/Interactive"
                 )
+                
+                # Show supported features for selected type
+                viz_manager = VisualizationManager()
+                features = viz_manager.get_renderer_features(viz_type)
+                if features:
+                    with st.expander(f"ℹ️ {viz_type.capitalize()} Features"):
+                        st.write(", ".join(features))
+                
+                # Optional: Custom visualization code
+                with st.expander("💻 Custom Code (Optional)"):
+                    viz_code = st.text_area(
+                        f"Custom {viz_type.capitalize()} Code",
+                        value=scene.get("visualization_code", ""),
+                        height=150,
+                        key=f"code_{i}",
+                        help=f"Write custom {viz_type} code for this scene"
+                    )
                 
                 # Visual elements
                 visual_elements = st.text_area(
@@ -238,6 +286,10 @@ class ScenarioInterface:
                     "transition": transition,
                     "script_hint": scene.get("script_hint", "")
                 }
+                
+                # Add visualization code if provided
+                if viz_code and viz_code.strip():
+                    edited_scene["visualization_code"] = viz_code.strip()
                 
                 # Add related research data if available
                 if "related_concept" in scene:
@@ -287,6 +339,74 @@ class ScenarioInterface:
                 return "cancel"
         
         return ""
+    
+    @staticmethod
+    def render_visualization_preview(scene: Dict, project: Dict) -> bool:
+        """
+        Render visualization preview for a scene.
+        
+        Args:
+            scene: Scene data
+            project: Current project data
+            
+        Returns:
+            bool: True if preview was generated successfully
+        """
+        st.markdown(f"### 🎬 Preview: {scene.get('title', 'Scene')}")
+        
+        # Validation first
+        viz_manager = VisualizationManager()
+        validation = viz_manager.validate_scene(scene)
+        
+        if not validation["valid"]:
+            st.error("⚠️ Cannot preview - scene has errors:")
+            for error in validation.get("errors", []):
+                st.write(f"- {error}")
+            return False
+        
+        if validation["warnings"]:
+            with st.expander("⚠️ Warnings"):
+                for warning in validation["warnings"]:
+                    st.write(f"- {warning}")
+        
+        # Preview button
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            quality = st.selectbox(
+                "Preview Quality",
+                ["low", "medium"],
+                index=0,
+                help="Low quality renders faster"
+            )
+        
+        with col2:
+            if st.button("🎥 Generate Preview", use_container_width=True):
+                with st.spinner(f"Rendering preview... This may take {scene.get('duration', 30)} seconds..."):
+                    try:
+                        # Render preview
+                        quality_enum = RenderQuality.LOW if quality == "low" else RenderQuality.MEDIUM
+                        result = viz_manager.render_scene(scene, quality=quality_enum)
+                        
+                        if result.success and result.output_path:
+                            st.success(f"✅ Preview rendered in {result.duration:.1f}s")
+                            
+                            # Display video
+                            if result.output_path.exists():
+                                st.video(str(result.output_path))
+                                return True
+                            else:
+                                st.error("Preview file not found")
+                                return False
+                        else:
+                            st.error(f"❌ Preview failed: {result.error}")
+                            return False
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+                        return False
+        
+        return False
     
     @staticmethod
     def render_scene_preview(scene: Dict):
@@ -453,6 +573,113 @@ class ScriptInterface:
                 edited_scripts[scene_id] = edited_script
         
         return edited_scripts
+    @staticmethod
+    def render_batch_rendering(
+        scenes: List[Dict],
+        project: Dict,
+        output_dir: Optional[Path] = None
+    ) -> Dict[str, Any]:
+        """
+        Render all scenes in batch with progress tracking.
+        
+        Args:
+            scenes: List of scenes to render
+            project: Current project data
+            output_dir: Optional output directory
+            
+        Returns:
+            Dict with rendering results
+        """
+        st.subheader("🎬 Batch Rendering")
+        
+        if not scenes:
+            st.warning("No scenes to render")
+            return {}
+        
+        # Setup
+        if output_dir is None:
+            project_id = project.get("project_id", "unknown")
+            output_dir = Path(f"data/projects/{project_id}/visualizations")
+        
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Quality selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            quality = st.selectbox(
+                "Render Quality",
+                ["low", "medium", "high", "ultra"],
+                index=1,
+                help="Higher quality takes longer to render"
+            )
+        
+        with col2:
+            # Estimate time
+            viz_manager = VisualizationManager()
+            estimated_time = viz_manager.estimate_total_render_time(scenes)
+            st.metric("Estimated Time", f"{estimated_time/60:.1f} min")
+        
+        # Render button
+        if st.button("🚀 Render All Scenes", type="primary", use_container_width=True):
+            quality_enum = RenderQuality[quality.upper()]
+            
+            # Progress tracking
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            results_container = st.container()
+            
+            results = {}
+            
+            def progress_callback(current, total, result):
+                progress = current / total
+                progress_bar.progress(progress)
+                status_text.text(f"Rendering scene {current}/{total}...")
+                
+                with results_container:
+                    if result.success:
+                        st.success(f"✅ Scene {current}: {result.duration:.1f}s")
+                    else:
+                        st.error(f"❌ Scene {current}: {result.error}")
+            
+            # Render all scenes
+            with st.spinner("Rendering scenes..."):
+                try:
+                    results = viz_manager.render_all_scenes(
+                        scenes,
+                        output_dir,
+                        quality_enum,
+                        progress_callback
+                    )
+                    
+                    # Summary
+                    successful = sum(1 for r in results.values() if r.success)
+                    failed = len(results) - successful
+                    
+                    st.markdown("---")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Scenes", len(results))
+                    with col2:
+                        st.metric("Successful", successful)
+                    with col3:
+                        st.metric("Failed", failed)
+                    
+                    if successful == len(results):
+                        st.success("🎉 All scenes rendered successfully!")
+                    elif successful > 0:
+                        st.warning(f"⚠️ {successful}/{len(results)} scenes rendered successfully")
+                    else:
+                        st.error("❌ All renders failed")
+                    
+                    return results
+                    
+                except Exception as e:
+                    st.error(f"❌ Batch rendering failed: {str(e)}")
+                    return {}
+        
+        return {}
+
 
 
 # Made with Bob

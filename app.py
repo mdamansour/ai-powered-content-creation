@@ -13,7 +13,7 @@ from config.settings import get_settings
 from config.api_keys import APIConfig
 from utils.project_manager import ProjectManager
 from ui.research_interface import ResearchInterface
-from ui.workflow_pages import render_scenario_page, render_scripts_page
+from ui.workflow_pages import render_scenario_page, render_scripts_page, render_visualization_page
 
 
 # Page configuration
@@ -347,6 +347,7 @@ def render_dashboard_page():
         ("Research", stats['has_research'], "research"),
         ("Scenario", stats['has_scenario'], "scenario"),
         ("Scripts", stats['has_scripts'], "scripts"),
+        ("Visualizations", stats['has_scenario'], "visualizations"),
         ("Audio", stats['has_audio'], "audio"),
         ("Video", stats['has_video'], "video")
     ]
@@ -369,6 +370,9 @@ def render_dashboard_page():
                     st.rerun()
                 elif step_id == "scripts":
                     st.session_state.current_page = "scripts"
+                    st.rerun()
+                elif step_id == "visualizations":
+                    st.session_state.current_page = "visualizations"
                     st.rerun()
                 else:
                     st.info(f"{step_name} module coming soon!")
@@ -803,6 +807,8 @@ def main():
         render_scenario_page(st.session_state.project_manager)
     elif page == "scripts":
         render_scripts_page(st.session_state.project_manager)
+    elif page == "visualizations":
+        render_visualization_page(st.session_state.project_manager)
     elif page == "help":
         render_help_page()
     else:

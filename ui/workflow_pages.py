@@ -127,9 +127,28 @@ def render_scenario_page(project_manager):
         elif action == "preview":
             st.markdown("---")
             st.subheader("📺 Scenario Preview")
-            for i, scene in enumerate(edited.get("scenes", []), 1):
-                with st.expander(f"Scene {i}: {scene.get('title', 'Untitled')}"):
-                    ScenarioInterface.render_scene_preview(scene)
+            
+            # Preview options
+            preview_type = st.radio(
+                "Preview Type",
+                ["Text Preview", "Visualization Preview"],
+                horizontal=True
+            )
+            
+            if preview_type == "Text Preview":
+                for i, scene in enumerate(edited.get("scenes", []), 1):
+                    with st.expander(f"Scene {i}: {scene.get('title', 'Untitled')}"):
+                        ScenarioInterface.render_scene_preview(scene)
+            else:
+                # Visualization preview
+                scene_options = [f"Scene {i}: {s.get('title', 'Untitled')}"
+                                for i, s in enumerate(edited.get("scenes", []), 1)]
+                selected = st.selectbox("Select Scene to Preview", scene_options)
+                scene_idx = int(selected.split(":")[0].replace("Scene ", "")) - 1
+                
+                if 0 <= scene_idx < len(edited.get("scenes", [])):
+                    scene = edited["scenes"][scene_idx]
+                    ScenarioInterface.render_visualization_preview(scene, project)
         
         elif action == "cancel":
             st.session_state.scenario_step = 1
@@ -274,6 +293,56 @@ def render_scripts_page(project_manager):
                 if 'scripts_data' in st.session_state:
                     del st.session_state.scripts_data
                 st.rerun()
+
+
+def render_visualization_page(project_manager):
+    """Render the visualization rendering page."""
+    if not st.session_state.current_project:
+        st.warning("No project selected. Please open or create a project.")
+        if st.button("➕ Create New Project"):
+            st.session_state.current_page = "new_project"
+        return
+    
+    project = st.session_state.current_project
+    
+    # Check if scenario exists
+    scenario = project.get("scenario", {})
+    scenes = scenario.get("scenes", [])
+    
+    if not scenes:
+        st.warning("⚠️ Please complete the Scenario Design phase first")
+        if st.button("← Go to Scenario Design"):
+            st.session_state.current_page = "scenario"
+        return
+    
+    st.title(f"🎬 Visualization Rendering: {project['title']}")
+    st.caption(f"Topic: {project['topic']} | Scenes: {len(scenes)}")
+    
+    # Tabs for different rendering options
+    tab1, tab2 = st.tabs(["📺 Preview Scenes", "🎬 Batch Render"])
+    
+    with tab1:
+        st.subheader("Preview Individual Scenes")
+        st.info("Generate quick previews to test your visualizations before final rendering")
+        
+        # Scene selection
+        scene_options = [f"Scene {i}: {s.get('title', 'Untitled')}" 
+                        for i, s in enumerate(scenes, 1)]
+        selected = st.selectbox("Select Scene", scene_options)
+        scene_idx = int(selected.split(":")[0].replace("Scene ", "")) - 1
+        
+        if 0 <= scene_idx < len(scenes):
+            scene = scenes[scene_idx]
+            st.markdown("---")
+            ScenarioInterface.render_visualization_preview(scene, project)
+    
+    with tab2:
+        st.subheader("Batch Render All Scenes")
+        st.info("Render all scenes at once for final video production")
+        
+        # Batch rendering interface
+        from pathlib import Path
+        ScriptInterface.render_batch_rendering(scenes, project)
 
 
 # Made with Bob
