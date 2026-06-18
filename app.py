@@ -13,6 +13,7 @@ from config.settings import get_settings
 from config.api_keys import APIConfig
 from utils.project_manager import ProjectManager
 from ui.research_interface import ResearchInterface
+from ui.workflow_pages import render_scenario_page, render_scripts_page
 
 
 # Page configuration
@@ -363,6 +364,12 @@ def render_dashboard_page():
                 if step_id == "research":
                     st.session_state.current_page = "research"
                     st.rerun()
+                elif step_id == "scenario":
+                    st.session_state.current_page = "scenario"
+                    st.rerun()
+                elif step_id == "scripts":
+                    st.session_state.current_page = "scripts"
+                    st.rerun()
                 else:
                     st.info(f"{step_name} module coming soon!")
     
@@ -538,8 +545,6 @@ def render_research_page():
             if 'research_data' in st.session_state:
                 del st.session_state.research_data
             st.rerun()
-
-            st.warning("Delete confirmation coming soon!")
 
 
 def render_settings_page():
@@ -794,6 +799,10 @@ def main():
         render_settings_page()
     elif page == "research":
         render_research_page()
+    elif page == "scenario":
+        render_scenario_page(st.session_state.project_manager)
+    elif page == "scripts":
+        render_scripts_page(st.session_state.project_manager)
     elif page == "help":
         render_help_page()
     else:

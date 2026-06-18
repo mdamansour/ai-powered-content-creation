@@ -317,12 +317,57 @@ class AIEngine:
         Returns:
             Dict containing structured research data
         """
+        print(f"\n[AIEngine] Building prompt for topic: '{topic}'")
         prompt = self._build_research_prompt(topic, level)
+        
+        # Log first 500 chars of prompt to verify it's correct
+        print(f"[AIEngine] Prompt preview (first 500 chars):")
+        print(f"{prompt[:500]}...")
+        print(f"[AIEngine] Sending request to {self.provider} model: {self.current_model_id}")
         
         try:
             response = await self._generate_async(prompt)
-            return self._parse_json_response(response)
+            
+            # Log response preview
+            print(f"\n[AIEngine] Raw AI response (first 500 chars):")
+            print(f"{response[:500]}...")
+            
+            result = self._parse_json_response(response)
+            
+            print(f"[AIEngine] Parsed JSON successfully")
+            print(f"[AIEngine] Title in response: '{result.get('title', 'N/A')}'")
+            print(f"[AIEngine] Topic field in response: '{result.get('topic', 'N/A')}'")
+            
+            # Post-process: Force correct topic and remove unwanted fields
+            if isinstance(result, dict) and result.get("parsed") != False:
+                original_title = result.get("title")
+                
+                # Force the title to match the input topic
+                result["title"] = topic
+                
+                if original_title != topic:
+                    print(f"[AIEngine] ⚠️  Title mismatch! AI returned '{original_title}', forcing to '{topic}'")
+                
+                # Remove any "topic", "subject", or "category" fields the AI might have added
+                removed_fields = []
+                for field in ["topic", "subject", "category", "subject_area"]:
+                    if field in result:
+                        removed_fields.append(f"{field}='{result[field]}'")
+                        result.pop(field)
+                
+                if removed_fields:
+                    print(f"[AIEngine] ⚠️  Removed AI-added fields: {', '.join(removed_fields)}")
+                
+                # Ensure all concepts are relevant (basic validation)
+                if "concepts" in result and isinstance(result["concepts"], list):
+                    print(f"[AIEngine] Found {len(result['concepts'])} concepts")
+                    if result["concepts"]:
+                        print(f"[AIEngine] First concept: '{result['concepts'][0].get('name', 'N/A')}'")
+            
+            print(f"[AIEngine] Research generation complete\n")
+            return result
         except Exception as e:
+            print(f"[AIEngine] ERROR: {str(e)}\n")
             return {
                 "error": str(e),
                 "topic": topic,
@@ -330,18 +375,19 @@ class AIEngine:
                 "parsed": False
             }
     
-    async def generate_scenario(self, concept: Dict[str, Any], duration: int = 300) -> Dict[str, Any]:
+    async def generate_scenario(self, concept: Dict[str, Any], duration: int = 300, scene_count: int = 5) -> Dict[str, Any]:
         """
         Generate visualization scenario for a concept.
         
         Args:
             concept: Dictionary containing concept information
             duration: Target duration in seconds
+            scene_count: Desired number of scenes
             
         Returns:
             Dict containing scene-by-scene scenario
         """
-        prompt = self._build_scenario_prompt(concept, duration)
+        prompt = self._build_scenario_prompt(concept, duration, scene_count)
         
         try:
             response = await self._generate_async(prompt)
@@ -405,55 +451,90 @@ class AIEngine:
     
     def _build_research_prompt(self, topic: str, level: str) -> str:
         """Build prompt for research generation."""
+        import time
+        import random
+        
+        # Add unique timestamp and random number to prevent caching
+        unique_id = f"{int(time.time())}-{random.randint(1000, 9999)}"
+        
         return f"""
+[REQUEST_ID: {unique_id}]
+
 You are an expert educator specializing in mathematics and physics.
 
-Topic: {topic}
+CRITICAL INSTRUCTION: You MUST research ONLY the EXACT topic provided. DO NOT generalize or broaden the topic.
+
+EXACT TOPIC TO RESEARCH: "{topic}"
 Educational Level: {level}
 
-Provide a comprehensive analysis for creating educational content. Include:
+IMPORTANT EXAMPLES:
+✅ CORRECT: If topic is "Even and Odd numbers" → Research ONLY even/odd numbers (divisibility by 2, properties like 2k and 2k+1, parity rules)
+✅ CORRECT: If topic is "Projectile Motion" → Research ONLY projectile motion (trajectory, range, time of flight)
+✅ CORRECT: If topic is "Quadratic Equations" → Research ONLY quadratic equations (ax²+bx+c=0, quadratic formula)
 
-1. **Core Concepts**: Key concepts with clear definitions and importance
-2. **Mathematical Formulas**: All relevant formulas in LaTeX format with explanations
-3. **Physical Principles**: Fundamental principles and laws
-4. **Prerequisites**: Required prior knowledge
-5. **Real-World Applications**: Practical uses and examples
-6. **Common Misconceptions**: Typical errors students make
-7. **Practice Problems**: Suggested problem types for practice
+❌ WRONG: If topic is "Even and Odd numbers" → DO NOT research "Algebra", "Number Theory", or "Variables"
+❌ WRONG: If topic is "Projectile Motion" → DO NOT research "Mechanics", "Newton's Laws", or general "Physics"
+❌ WRONG: If topic is "Quadratic Equations" → DO NOT research "Polynomials", "Functions", or general "Algebra"
 
-Return your response as a valid JSON object with this structure:
+YOUR TASK: Research the EXACT topic "{topic}" - nothing broader, nothing different.
+
+For the topic "{topic}", provide:
+
+1. **Core Concepts**: Concepts DIRECTLY about "{topic}"
+2. **Mathematical Formulas**: Formulas used IN "{topic}"
+3. **Physical Principles**: Principles OF "{topic}"
+4. **Prerequisites**: What students need BEFORE learning "{topic}"
+5. **Real-World Applications**: Where "{topic}" is USED
+6. **Common Misconceptions**: Errors students make WITH "{topic}"
+7. **Practice Problems**: Problems TO PRACTICE "{topic}"
+
+STRICT JSON REQUIREMENTS:
+- "title" MUST be: "{topic}" (exact match)
+- DO NOT include "topic", "subject", "category", or "subject_area" fields
+- Every concept name must relate to "{topic}"
+- Every formula must be used in "{topic}"
+
+Return this JSON structure ONLY:
 {{
-  "title": "Topic title",
+  "title": "{topic}",
   "concepts": [
     {{
-      "name": "Concept name",
-      "definition": "Clear definition",
-      "importance": "Why it matters"
+      "name": "Concept name (must relate to {topic})",
+      "definition": "Definition",
+      "importance": "Why it matters for {topic}"
     }}
   ],
   "formulas": [
     {{
-      "latex": "LaTeX formula",
-      "explanation": "What it means",
-      "variables": {{
-        "var": "description"
-      }}
+      "latex": "Formula used in {topic}",
+      "explanation": "What it means in context of {topic}",
+      "variables": {{"var": "description"}}
     }}
   ],
-  "principles": ["Principle 1", "Principle 2"],
-  "prerequisites": ["Prerequisite 1", "Prerequisite 2"],
-  "applications": ["Application 1", "Application 2"],
-  "misconceptions": ["Misconception 1", "Misconception 2"],
-  "practice_problems": ["Problem type 1", "Problem type 2"]
+  "principles": ["Principle of {topic}"],
+  "prerequisites": ["What's needed before {topic}"],
+  "applications": ["Where {topic} is used"],
+  "misconceptions": ["Common errors with {topic}"],
+  "practice_problems": ["Problem for {topic}"]
 }}
 
-Ensure the JSON is valid and properly formatted.
+VERIFICATION CHECKLIST:
+□ Title is exactly "{topic}"
+□ All concepts are about "{topic}"
+□ All formulas are used in "{topic}"
+□ No "topic" or "subject" fields added
+□ Content is NOT about a broader subject
+
+Return ONLY valid JSON. No markdown, no explanations, just JSON.
 """
     
-    def _build_scenario_prompt(self, concept: Dict[str, Any], duration: int) -> str:
+    def _build_scenario_prompt(self, concept: Dict[str, Any], duration: int, scene_count: int = 5) -> str:
         """Build prompt for scenario generation."""
         concept_name = concept.get("name", "Unknown")
         concept_def = concept.get("definition", "")
+        
+        # Calculate average duration per scene
+        avg_duration = duration // scene_count
         
         return f"""
 You are a visual storytelling expert for educational content.
@@ -461,11 +542,14 @@ You are a visual storytelling expert for educational content.
 Concept: {concept_name}
 Definition: {concept_def}
 Target Duration: {duration} seconds
+Required Number of Scenes: {scene_count}
 
-Create a detailed visualization scenario with multiple scenes. For each scene, specify:
+IMPORTANT: You MUST create EXACTLY {scene_count} scenes. No more, no less.
+
+Create a detailed visualization scenario with {scene_count} scenes. For each scene, specify:
 
 1. **Scene Title**: Descriptive title
-2. **Duration**: Time in seconds
+2. **Duration**: Time in seconds (average ~{avg_duration}s per scene, total must equal {duration}s)
 3. **Visualization Type**: Choose from:
    - "manim" for mathematical animations, equations, transformations
    - "matplotlib" for graphs, plots, data visualization
@@ -475,25 +559,31 @@ Create a detailed visualization scenario with multiple scenes. For each scene, s
 6. **Key Teaching Points**: Main concepts to convey
 7. **Transition**: How to transition to next scene
 
-Return as valid JSON:
+Return as valid JSON with EXACTLY {scene_count} scenes:
 {{
   "total_duration": {duration},
   "scenes": [
     {{
       "id": 1,
       "title": "Scene title",
-      "duration": 30,
+      "duration": {avg_duration},
       "visualization_type": "manim",
       "visual_elements": ["Element 1", "Element 2"],
       "animation_description": "Detailed animation description",
       "teaching_points": ["Point 1", "Point 2"],
       "transition": "Transition description",
       "script_hint": "Brief narration suggestion"
-    }}
+    }},
+    ... (continue for all {scene_count} scenes)
   ]
 }}
 
-Ensure scenes add up to approximately {duration} seconds total.
+CRITICAL REQUIREMENTS:
+- MUST have EXACTLY {scene_count} scenes in the "scenes" array
+- Scene durations MUST add up to approximately {duration} seconds total
+- Each scene should be roughly {avg_duration} seconds (adjust as needed for content flow)
+
+Return ONLY valid JSON.
 """
     
     def _build_script_prompt(self, scene: Dict[str, Any]) -> str:

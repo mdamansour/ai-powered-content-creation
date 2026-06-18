@@ -93,13 +93,44 @@ class TopicProcessor:
             Dict containing research data
         """
         try:
+            print(f"\n{'='*60}")
+            print(f"[TopicProcessor] Generating research for: '{topic}'")
+            print(f"[TopicProcessor] Level: {level}")
+            print(f"{'='*60}\n")
+            
             # Generate research using AI
             research = await self.engine.generate_research(topic, level)
             
-            # Add metadata
-            research["topic"] = topic
+            # DEBUG: Log what AI returned
+            print(f"\n[TopicProcessor] AI Response received:")
+            print(f"  - Title from AI: {research.get('title', 'N/A')}")
+            print(f"  - Topic field from AI: {research.get('topic', 'N/A')}")
+            print(f"  - Success: {research.get('success', 'N/A')}")
+            print(f"  - Parsed: {research.get('parsed', 'N/A')}")
+            
+            # CRITICAL: Remove any topic/subject fields the AI added
+            # These are wrong and should not be in the response
+            ai_added_topic = research.pop("topic", None)
+            ai_added_subject = research.pop("subject", None)
+            ai_added_category = research.pop("category", None)
+            
+            if ai_added_topic:
+                print(f"  ⚠️  WARNING: AI added 'topic' field: '{ai_added_topic}' (REMOVED)")
+            if ai_added_subject:
+                print(f"  ⚠️  WARNING: AI added 'subject' field: '{ai_added_subject}' (REMOVED)")
+            if ai_added_category:
+                print(f"  ⚠️  WARNING: AI added 'category' field: '{ai_added_category}' (REMOVED)")
+            
+            # Add correct metadata
+            research["topic"] = topic  # Use the INPUT topic, not AI's categorization
             research["level"] = level
             research["success"] = research.get("parsed", True) != False
+            
+            print(f"\n[TopicProcessor] Final research data:")
+            print(f"  - Title (corrected): {research.get('title')}")
+            print(f"  - Topic (forced): {research.get('topic')}")
+            print(f"  - Number of concepts: {len(research.get('concepts', []))}")
+            print(f"{'='*60}\n")
             
             if custom_instructions:
                 research["custom_instructions"] = custom_instructions
@@ -107,6 +138,7 @@ class TopicProcessor:
             return research
             
         except Exception as e:
+            print(f"\n[TopicProcessor] ERROR: {str(e)}\n")
             return {
                 "topic": topic,
                 "level": level,
