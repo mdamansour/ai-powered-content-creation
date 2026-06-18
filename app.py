@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config.settings import get_settings
 from config.api_keys import APIConfig
 from utils.project_manager import ProjectManager
+from ui.research_interface import ResearchInterface
 
 
 # Page configuration
@@ -359,7 +360,11 @@ def render_dashboard_page():
                 st.info(f"○ {step_name}")
             
             if st.button(f"Go to {step_name}", key=f"goto_{step_id}", use_container_width=True):
-                st.info(f"{step_name} module coming soon!")
+                if step_id == "research":
+                    st.session_state.current_page = "research"
+                    st.rerun()
+                else:
+                    st.info(f"{step_name} module coming soon!")
     
     st.markdown("---")
     
@@ -379,6 +384,161 @@ def render_dashboard_page():
     
     with col3:
         if st.button("🗑️ Delete Project", use_container_width=True):
+            st.warning("Delete confirmation coming soon!")
+
+
+def render_research_page():
+    """Render the research page for AI-powered topic research."""
+    if not st.session_state.current_project:
+        st.warning("No project selected. Please open or create a project.")
+        if st.button("➕ Create New Project"):
+            st.session_state.current_page = "new_project"
+        return
+    
+    project = st.session_state.current_project
+    
+    st.title(f"🔬 Research: {project['title']}")
+    st.caption(f"Topic: {project['topic']}")
+    
+    # Check if research already exists
+    has_research = bool(project.get("research", {}).get("validated_concepts"))
+    
+    if has_research and 'regenerate_research' not in st.session_state:
+        st.info("✅ Research already completed for this project")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("👁️ View Research", use_container_width=True):
+                st.session_state.view_research = True
+        with col2:
+            if st.button("🔄 Regenerate Research", use_container_width=True):
+                st.session_state.regenerate_research = True
+                st.rerun()
+        
+        if st.session_state.get('view_research'):
+            st.markdown("---")
+            research_data = project.get("research", {}).get("validated_concepts", {})
+            if research_data:
+                validated = ResearchInterface.render_research_validation(research_data, project)
+                
+                if st.button("💾 Save Changes"):
+                    project["research"]["validated_concepts"] = validated
+                    if st.session_state.project_manager.save_project(project):
+                        st.success("✅ Research updated!")
+        return
+    
+    # Research workflow
+    if 'research_step' not in st.session_state:
+        st.session_state.research_step = 1
+    
+    # Step indicator
+    steps = ["Topic Selection", "Generate Research", "Validate & Edit"]
+    current_step = st.session_state.research_step
+    
+    cols = st.columns(len(steps))
+    for i, step in enumerate(steps, 1):
+        with cols[i-1]:
+            if i < current_step:
+                st.success(f"✓ {step}")
+            elif i == current_step:
+                st.info(f"▶ {step}")
+            else:
+                st.write(f"○ {step}")
+    
+    st.markdown("---")
+    
+    # Step 1: Topic Selection
+    if current_step == 1:
+        topic_info = ResearchInterface.render_topic_selection(project)
+        
+        if topic_info and st.button("Next: Generate Research →", type="primary"):
+            st.session_state.topic_info = topic_info
+            st.session_state.research_step = 2
+            st.rerun()
+    
+    # Step 2: Generate Research
+    elif current_step == 2:
+        topic_info = st.session_state.get('topic_info')
+        
+        if not topic_info:
+            st.error("Topic information missing. Please go back.")
+            if st.button("← Back to Topic Selection"):
+                st.session_state.research_step = 1
+                st.rerun()
+            return
+        
+        research = ResearchInterface.render_research_generation(topic_info, project)
+        
+        if research:
+            st.session_state.research_data = research
+            st.session_state.research_step = 3
+            st.rerun()
+        
+        if st.button("← Back to Topic Selection"):
+            st.session_state.research_step = 1
+            st.rerun()
+    
+    # Step 3: Validate & Edit
+    elif current_step == 3:
+        research = st.session_state.get('research_data')
+        
+        if not research:
+            st.error("Research data missing. Please regenerate.")
+            if st.button("← Back to Generation"):
+                st.session_state.research_step = 2
+                st.rerun()
+            return
+        
+        validated = ResearchInterface.render_research_validation(research, project)
+        action = ResearchInterface.render_research_actions(validated, project)
+        
+        if action == "save":
+            # Save research to project
+            project["research"]["raw_ai_output"] = research
+            project["research"]["validated_concepts"] = validated
+            project["status"] = "in_progress"
+            
+            if st.session_state.project_manager.save_project(project):
+                st.success("✅ Research saved successfully!")
+                st.info("Proceeding to Scenario Design...")
+                
+                # Clean up session state
+                if 'research_step' in st.session_state:
+                    del st.session_state.research_step
+                if 'topic_info' in st.session_state:
+                    del st.session_state.topic_info
+                if 'research_data' in st.session_state:
+                    del st.session_state.research_data
+                if 'regenerate_research' in st.session_state:
+                    del st.session_state.regenerate_research
+                
+                # Navigate to dashboard
+                st.session_state.current_page = "dashboard"
+                st.rerun()
+        
+        elif action == "regenerate":
+            st.session_state.research_step = 2
+            if 'research_data' in st.session_state:
+                del st.session_state.research_data
+            st.rerun()
+        
+        elif action == "export":
+            import json
+            research_json = json.dumps(validated, indent=2)
+            st.download_button(
+                "📥 Download Research JSON",
+                research_json,
+                file_name=f"{project['title']}_research.json",
+                mime="application/json"
+            )
+        
+        elif action == "cancel":
+            # Reset to step 1
+            st.session_state.research_step = 1
+            if 'research_data' in st.session_state:
+                del st.session_state.research_data
+            st.rerun()
+
             st.warning("Delete confirmation coming soon!")
 
 
@@ -632,6 +792,8 @@ def main():
         render_dashboard_page()
     elif page == "settings":
         render_settings_page()
+    elif page == "research":
+        render_research_page()
     elif page == "help":
         render_help_page()
     else:
