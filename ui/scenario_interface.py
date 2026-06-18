@@ -1,11 +1,12 @@
 """
-Scenario design interface UI components.
+Scenario design interface UI components with Visual-First Pipeline.
 """
 import streamlit as st
-import asyncio
 from typing import Dict, Optional, List, Any
 from pathlib import Path
 from core.scenario_generator import ScenarioGenerator
+from core.visual_director import VisualDirector
+from core.scenario_composer import ScenarioComposer
 from core.script_generator import ScriptGenerator
 from utils.model_selector import ModelSelector
 from visualization import VisualizationManager, RenderQuality
@@ -53,11 +54,29 @@ class ScenarioInterface:
                 help="Suggested number of scenes"
             )
         
-        # Custom instructions
-        with st.expander("⚙️ Advanced Options"):
+        # Visual-First Pipeline Options
+        with st.expander("⚙️ Visual-First Pipeline Options"):
+            st.markdown("### 🎨 Visual Style")
+            visual_style = st.selectbox(
+                "Visual Style",
+                ["3blue1brown", "modern", "minimal"],
+                index=0,
+                help="Choose the visual style for animations"
+            )
+            
+            st.markdown("### 🎯 Content Focus")
+            use_visual_first = st.checkbox(
+                "Use Visual-First Pipeline (Recommended)",
+                value=True,
+                help="Creates rich visual content first, then generates narration"
+            )
+            
+            if not use_visual_first:
+                st.warning("⚠️ Legacy mode: May produce text-heavy content")
+            
             custom_instructions = st.text_area(
-                "Custom Instructions (optional)",
-                placeholder="E.g., Focus on visual demonstrations, include real-world examples...",
+                "Additional Instructions (optional)",
+                placeholder="E.g., Emphasize geometric constructions, show step-by-step transformations...",
                 height=100
             )
             
@@ -78,36 +97,100 @@ class ScenarioInterface:
                 selected_model = None
         
         # Generate button
-        if st.button("🚀 Generate Scenario", type="primary", use_container_width=True):
-            with st.spinner("🎬 Creating visualization scenario... This may take 20-40 seconds..."):
-                try:
-                    # Create generator with selected model
-                    engine = ModelSelector.get_engine_for_task(
-                        "scenario",
-                        custom_model=selected_model if selected_model else None
-                    )
-                    generator = ScenarioGenerator(engine=engine)
-                    
-                    # Generate scenario with scene count
-                    scenario = asyncio.run(
-                        generator.generate_scenario(
+        if st.button("🚀 Generate Visual Scenario", type="primary", use_container_width=True):
+            if use_visual_first:
+                # NEW: Visual-First Pipeline
+                with st.spinner("🎨 Stage 1/2: Planning rich visual content..."):
+                    try:
+                        # Create AI engine
+                        engine = ModelSelector.get_engine_for_task(
+                            "scenario",
+                            custom_model=selected_model if selected_model else None
+                        )
+                        
+                        # Stage 1: Visual Director (synchronous)
+                        director = VisualDirector(engine)
+                        visual_plan_result = director.plan_visual_story(
                             research,
                             target_duration,
-                            scene_count,  # Pass the scene count from UI
+                            visual_style
+                        )
+                        
+                        if not visual_plan_result.get("success"):
+                            st.error(f"❌ Visual planning failed: {visual_plan_result.get('error')}")
+                            return None
+                        
+                        visual_plan = visual_plan_result["visual_plan"]
+                        
+                        # Validate visual richness
+                        validation = director.validate_visual_plan(visual_plan)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Visual Richness Score", f"{validation['richness_score']}/100")
+                        with col2:
+                            scene_count_actual = len(visual_plan.get("scenes", []))
+                            st.metric("Scenes Planned", scene_count_actual)
+                        
+                        if validation["warnings"]:
+                            with st.expander("⚠️ Visual Plan Warnings"):
+                                for warning in validation["warnings"]:
+                                    st.warning(warning)
+                        
+                        st.success("✅ Stage 1 Complete: Visual story planned!")
+                        
+                    except Exception as e:
+                        st.error(f"❌ Visual Director Error: {str(e)}")
+                        return None
+                
+                with st.spinner("🎬 Stage 2/2: Composing detailed Manim code..."):
+                    try:
+                        # Stage 2: Scenario Composer (synchronous)
+                        composer = ScenarioComposer(engine)
+                        scenario = composer.compose_scenes(visual_plan)
+                        
+                        if scenario.get("success"):
+                            st.success("✅ Visual-First Scenario generated successfully!")
+                            st.balloons()
+                            
+                            # Show summary
+                            st.info(f"📊 Created {len(scenario['scenes'])} scenes with rich visual content")
+                            return scenario
+                        else:
+                            st.error(f"❌ Scenario composition failed: {scenario.get('error')}")
+                            return None
+                            
+                    except Exception as e:
+                        st.error(f"❌ Scenario Composer Error: {str(e)}")
+                        return None
+            
+            else:
+                # LEGACY: Old pipeline (kept for compatibility)
+                with st.spinner("🎬 Creating scenario (legacy mode)..."):
+                    try:
+                        engine = ModelSelector.get_engine_for_task(
+                            "scenario",
+                            custom_model=selected_model if selected_model else None
+                        )
+                        generator = ScenarioGenerator(engine=engine)
+                        
+                        scenario = generator.generate_scenario(
+                            research,
+                            target_duration,
+                            scene_count,
                             custom_instructions if custom_instructions else None
                         )
-                    )
-                    
-                    if scenario.get("success"):
-                        st.success("✅ Scenario generated successfully!")
-                        return scenario
-                    else:
-                        st.error(f"❌ Scenario generation failed: {scenario.get('error', 'Unknown error')}")
-                        return None
                         
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
-                    return None
+                        if scenario.get("success"):
+                            st.success("✅ Scenario generated!")
+                            return scenario
+                        else:
+                            st.error(f"❌ Failed: {scenario.get('error')}")
+                            return None
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+                        return None
         
         return None
     
@@ -496,10 +579,8 @@ class ScriptInterface:
                     )
                     generator = ScriptGenerator(engine=engine)
                     
-                    # Generate scripts
-                    scripts = asyncio.run(
-                        generator.generate_all_scripts(scenes, research)
-                    )
+                    # Generate scripts (synchronous)
+                    scripts = generator.generate_all_scripts(scenes, research)
                     
                     st.success(f"✅ Generated {len(scripts)} scripts!")
                     return scripts

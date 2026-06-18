@@ -255,13 +255,34 @@ class MatplotlibRenderer(BaseRenderer):
                 blit=True
             )
             
-            # Save animation
-            anim.save(
-                str(output_path),
-                writer='ffmpeg',
-                fps=self.config.fps,
-                dpi=100
-            )
+            # Save animation with proper FFmpeg configuration
+            try:
+                from matplotlib.animation import FFMpegWriter
+                writer = FFMpegWriter(
+                    fps=self.config.fps,
+                    codec='libx264',
+                    bitrate=2000
+                )
+                # Set extra_args via metadata if supported
+                writer.extra_args = ['-pix_fmt', 'yuv420p']
+                anim.save(str(output_path), writer=writer, dpi=100)
+            except Exception as e:
+                # Fallback to simpler save method
+                try:
+                    anim.save(
+                        str(output_path),
+                        writer='ffmpeg',
+                        fps=self.config.fps,
+                        dpi=100
+                    )
+                except Exception as e2:
+                    # Last resort: use pillow writer
+                    anim.save(
+                        str(output_path),
+                        writer='pillow',
+                        fps=self.config.fps,
+                        dpi=100
+                    )
             
             plt.close(fig)
             return {"success": True}

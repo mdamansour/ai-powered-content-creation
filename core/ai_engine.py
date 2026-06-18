@@ -398,6 +398,48 @@ class AIEngine:
                 "concept": concept.get("name", "Unknown"),
                 "parsed": False
             }
+    def generate_scenario_sync(self, concept: Dict[str, Any], duration: int = 300, scene_count: int = 5) -> Dict[str, Any]:
+        """
+        Generate visualization scenario for a concept (synchronous version).
+        
+        Args:
+            concept: Dictionary containing concept information
+            duration: Target duration in seconds
+            scene_count: Desired number of scenes
+            
+        Returns:
+            Dict containing scene-by-scene scenario
+        """
+        prompt = self._build_scenario_prompt(concept, duration, scene_count)
+        
+        try:
+            response = self.generate(prompt)
+            return self._parse_json_response(response)
+        except Exception as e:
+            return {
+                "error": str(e),
+                "concept": concept.get("name", "Unknown"),
+                "parsed": False
+            }
+    
+    def generate_script_sync(self, scene: Dict[str, Any]) -> str:
+        """
+        Generate narration script for a scene (synchronous version).
+        
+        Args:
+            scene: Dictionary containing scene information
+            
+        Returns:
+            str: Generated script text
+        """
+        prompt = self._build_script_prompt(scene)
+        
+        try:
+            response = self.generate(prompt)
+            return response.strip()
+        except Exception as e:
+            return f"Error generating script: {str(e)}"
+    
     
     async def generate_script(self, scene: Dict[str, Any]) -> str:
         """
@@ -529,7 +571,7 @@ Return ONLY valid JSON. No markdown, no explanations, just JSON.
 """
     
     def _build_scenario_prompt(self, concept: Dict[str, Any], duration: int, scene_count: int = 5) -> str:
-        """Build prompt for scenario generation."""
+        """Build prompt for scenario generation with 3Blue1Brown-quality Manim code."""
         concept_name = concept.get("name", "Unknown")
         concept_def = concept.get("definition", "")
         
@@ -537,53 +579,161 @@ Return ONLY valid JSON. No markdown, no explanations, just JSON.
         avg_duration = duration // scene_count
         
         return f"""
-You are a visual storytelling expert for educational content.
+You are an EXPERT Manim animator creating 3Blue1Brown-quality educational content.
 
 Concept: {concept_name}
 Definition: {concept_def}
 Target Duration: {duration} seconds
-Required Number of Scenes: {scene_count}
+Required Scenes: {scene_count}
 
-IMPORTANT: You MUST create EXACTLY {scene_count} scenes. No more, no less.
+CRITICAL: Generate PROFESSIONAL, 3BLUE1BROWN-STYLE Manim code for EACH scene.
 
-Create a detailed visualization scenario with {scene_count} scenes. For each scene, specify:
+=== 3BLUE1BROWN QUALITY STANDARDS ===
 
-1. **Scene Title**: Descriptive title
-2. **Duration**: Time in seconds (average ~{avg_duration}s per scene, total must equal {duration}s)
-3. **Visualization Type**: Choose from:
-   - "manim" for mathematical animations, equations, transformations
-   - "matplotlib" for graphs, plots, data visualization
-   - "plotly" for 3D plots, interactive visualizations
-4. **Visual Elements**: What to show on screen
-5. **Animation Description**: How elements should animate
-6. **Key Teaching Points**: Main concepts to convey
-7. **Transition**: How to transition to next scene
+1. VISUAL STORYTELLING
+   - Progressive concept building (simple → complex)
+   - Smooth equation transformations using Transform()
+   - Geometric constructions with annotations
+   - Visual metaphors for abstract concepts
 
-Return as valid JSON with EXACTLY {scene_count} scenes:
+2. ADVANCED MANIM FEATURES (MUST USE)
+   - MathTex() for equations with LaTeX
+   - NumberPlane/Axes for coordinate systems
+   - Vector/Arrow for directional concepts
+   - Dot with labels for points
+   - Graph() for function plotting
+   - Brace/DoubleArrow for annotations
+   - SurroundingRectangle for emphasis
+   - VGroup for grouping elements
+
+3. PROFESSIONAL COLOR SCHEME (3Blue1Brown palette)
+   - Background: "#0C0C0C" (near black)
+   - Primary: "#58C4DD" (signature blue)
+   - Secondary: "#83C167" (green)
+   - Accent: "#FC6255" (red/pink)
+   - Text: "#ECECEC" (light gray)
+   - Highlight: "#FFFF00" (yellow)
+
+4. SMOOTH ANIMATIONS
+   - Use rate_func=smooth for natural motion
+   - Transform() for equation morphing
+   - Create() for drawing shapes
+   - Write() for text/equations
+   - GrowArrow() for vectors
+   - FadeIn/FadeOut with proper timing
+
+5. VISUAL HIERARCHY
+   - Title: 48pt, bold, top edge
+   - Equations: 40pt, centered
+   - Body text: 32pt
+   - Labels: 24pt
+   - Proper spacing and alignment
+
+=== EXAMPLE: EQUATION TRANSFORMATION ===
+```python
+# Show general quadratic
+eq1 = MathTex("ax^2 + bx + c = 0", color="#ECECEC")
+eq1.scale(1.2)
+self.play(Write(eq1), run_time=1.5)
+self.wait(0.5)
+
+# Transform to specific example
+eq2 = MathTex("x^2 + 5x + 6 = 0", color="#58C4DD")
+eq2.scale(1.2)
+self.play(Transform(eq1, eq2), run_time=1.5)
+self.wait(0.5)
+
+# Factor it
+eq3 = MathTex("(x + 2)(x + 3) = 0", color="#83C167")
+eq3.scale(1.2)
+self.play(Transform(eq1, eq3), run_time=1.5)
+self.wait(1)
+```
+
+=== EXAMPLE: GEOMETRIC CONSTRUCTION ===
+```python
+# Create axes
+axes = Axes(
+    x_range=[-3, 3, 1],
+    y_range=[-2, 8, 2],
+    axis_config={{"color": "#404040"}},
+    tips=True
+)
+labels = axes.get_axis_labels(x_label="x", y_label="y")
+self.play(Create(axes), Write(labels), run_time=2)
+
+# Plot function
+graph = axes.plot(lambda x: x**2, color="#58C4DD", stroke_width=4)
+func_label = MathTex("f(x) = x^2", color="#58C4DD").to_edge(UP)
+self.play(Create(graph), Write(func_label), run_time=2)
+
+# Highlight point
+point = Dot(axes.c2p(2, 4), color="#FC6255", radius=0.1)
+coords = MathTex("(2, 4)", color="#FC6255").next_to(point, UR)
+self.play(GrowFromCenter(point), Write(coords), run_time=1)
+```
+
+=== EXAMPLE: VECTOR VISUALIZATION ===
+```python
+# Number plane
+plane = NumberPlane(
+    background_line_style={{
+        "stroke_color": "#404040",
+        "stroke_width": 1,
+        "stroke_opacity": 0.3
+    }}
+)
+self.play(Create(plane), run_time=1.5)
+
+# Create vectors
+v1 = Vector([2, 1], color="#58C4DD", stroke_width=4)
+v2 = Vector([1, 2], color="#83C167", stroke_width=4)
+v1_label = MathTex("\\\\vec{{v}}_1", color="#58C4DD").next_to(v1.get_end(), RIGHT)
+v2_label = MathTex("\\\\vec{{v}}_2", color="#83C167").next_to(v2.get_end(), UP)
+
+self.play(GrowArrow(v1), Write(v1_label), run_time=1)
+self.play(GrowArrow(v2), Write(v2_label), run_time=1)
+
+# Show sum
+v_sum = Vector([3, 3], color="#FC6255", stroke_width=5)
+sum_label = MathTex("\\\\vec{{v}}_1 + \\\\vec{{v}}_2", color="#FC6255").next_to(v_sum.get_end(), UR)
+self.play(GrowArrow(v_sum), Write(sum_label), run_time=1.5)
+```
+
+=== JSON FORMAT ===
+Return EXACTLY {scene_count} scenes with this structure:
 {{
   "total_duration": {duration},
   "scenes": [
     {{
       "id": 1,
-      "title": "Scene title",
+      "title": "Introduction: {concept_name}",
       "duration": {avg_duration},
       "visualization_type": "manim",
-      "visual_elements": ["Element 1", "Element 2"],
-      "animation_description": "Detailed animation description",
-      "teaching_points": ["Point 1", "Point 2"],
-      "transition": "Transition description",
-      "script_hint": "Brief narration suggestion"
+      "manim_code": "# COMPLETE, EXECUTABLE CODE HERE\\n# Use MathTex, Transform, Create, etc.\\n# Include colors from 3B1B palette\\n# Smooth animations with proper timing",
+      "visual_elements": ["Equation transformation", "Geometric diagram", "Annotations"],
+      "animation_description": "Detailed description of visual flow",
+      "teaching_points": ["Key concept 1", "Key concept 2"],
+      "transition": "Smooth fade to next scene"
     }},
     ... (continue for all {scene_count} scenes)
   ]
 }}
 
-CRITICAL REQUIREMENTS:
-- MUST have EXACTLY {scene_count} scenes in the "scenes" array
-- Scene durations MUST add up to approximately {duration} seconds total
-- Each scene should be roughly {avg_duration} seconds (adjust as needed for content flow)
+=== CRITICAL REQUIREMENTS ===
+✓ EXACTLY {scene_count} scenes
+✓ Each scene has COMPLETE, WORKING Manim code
+✓ Use MathTex for ALL equations
+✓ Use 3Blue1Brown color palette
+✓ Include geometric diagrams where relevant
+✓ Smooth Transform() animations
+✓ Professional visual hierarchy
+✓ Progressive complexity building
+✓ Proper timing (1-2s per animation)
+✓ Clear annotations and labels
+✓ Total duration = {duration} seconds
 
-Return ONLY valid JSON.
+Return ONLY valid JSON with professional Manim code.
 """
     
     def _build_script_prompt(self, scene: Dict[str, Any]) -> str:

@@ -1,7 +1,6 @@
 """
 Script generation for creating narration synchronized with visualization scenes.
 """
-import asyncio
 from typing import Dict, List, Optional, Any
 from core.ai_engine import AIEngine
 from utils.model_selector import ModelSelector
@@ -19,13 +18,99 @@ class ScriptGenerator:
         """
         self.engine = engine or ModelSelector.get_engine_for_task("scripts")
     
-    async def generate_script(
+    def generate_script_from_visuals(
+        self,
+        scene: Dict[str, Any],
+        visual_description: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Generate narration script BASED ON VISUALS (visual-first approach).
+        
+        Args:
+            scene: Scene data with visual elements
+            visual_description: Detailed description of what's shown visually
+            context: Optional context
+            
+        Returns:
+            str: Generated script that describes/explains the visuals
+        """
+        prompt = self._build_visual_first_prompt(scene, visual_description, context)
+        
+        try:
+            response = self.engine.generate(prompt)
+            script = response.strip()
+            script = self._post_process_script(script, scene)
+            return script
+        except Exception as e:
+            return f"Error generating script: {str(e)}"
+    
+    def _build_visual_first_prompt(
+        self,
+        scene: Dict[str, Any],
+        visual_description: str,
+        context: Optional[Dict[str, Any]]
+    ) -> str:
+        """Build prompt for generating script based on visuals."""
+        
+        title = scene.get("title", "Scene")
+        duration = scene.get("duration", 30)
+        visual_elements = scene.get("visual_elements", [])
+        teaching_points = scene.get("teaching_points", [])
+        
+        # Calculate target word count
+        target_words = int((duration / 60) * 150)  # 150 words per minute
+        
+        return f"""
+You are writing NARRATION for an educational video. The VISUALS are already created.
+Your job is to write a script that DESCRIBES and EXPLAINS what viewers SEE on screen.
+
+=== WHAT'S ON SCREEN ===
+Scene: {title}
+Duration: {duration} seconds
+
+Visual Elements Shown:
+{chr(10).join(f"- {elem}" for elem in visual_elements)}
+
+Visual Flow:
+{visual_description}
+
+Key Teaching Points to Cover:
+{chr(10).join(f"- {point}" for point in teaching_points)}
+
+=== YOUR TASK ===
+Write narration that:
+1. DESCRIBES what viewers see on screen
+2. EXPLAINS the visual transformations and animations
+3. CONNECTS visuals to concepts
+4. Uses conversational, engaging tone
+5. Matches the {duration}-second timing
+6. References visual elements naturally ("Notice how...", "Watch as...", "See the...")
+
+=== STYLE GUIDELINES ===
+✓ Conversational and engaging
+✓ Reference visuals explicitly
+✓ Use present tense ("we see", "this shows")
+✓ Ask rhetorical questions
+✓ Build excitement about discoveries
+✓ Keep sentences short and clear
+✓ Match 3Blue1Brown narration style
+
+=== EXAMPLE (for parabola visualization) ===
+"Watch as we plot points one by one, and notice how they form this beautiful U-shape. This is a parabola, and it's the graph of f(x) equals x squared. See how the curve is perfectly symmetric? That red dot at the bottom - that's the vertex, the lowest point of our parabola. Now, as this green line slides along the curve, it's always tangent to the parabola, touching at exactly one point. The steeper the curve, the steeper our tangent line becomes."
+
+Target word count: approximately {target_words} words
+
+Return ONLY the narration script, no additional formatting.
+"""
+    
+    def generate_script(
         self,
         scene: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Generate narration script for a scene.
+        Generate narration script for a scene (synchronous).
         
         Args:
             scene: Scene data dictionary
@@ -35,8 +120,8 @@ class ScriptGenerator:
             str: Generated script text
         """
         try:
-            # Generate script using AI
-            script = await self.engine.generate_script(scene)
+            # Generate script using AI (synchronous)
+            script = self.engine.generate_script_sync(scene)
             
             # Post-process script
             script = self._post_process_script(script, scene)
@@ -46,13 +131,13 @@ class ScriptGenerator:
         except Exception as e:
             return f"Error generating script: {str(e)}"
     
-    async def generate_all_scripts(
+    def generate_all_scripts(
         self,
         scenes: List[Dict[str, Any]],
         research: Optional[Dict[str, Any]] = None
     ) -> Dict[str, str]:
         """
-        Generate scripts for all scenes.
+        Generate scripts for all scenes (synchronous).
         
         Args:
             scenes: List of scene dictionaries
@@ -73,7 +158,7 @@ class ScriptGenerator:
             }
             
             # Generate script
-            script = await self.generate_script(scene, context)
+            script = self.generate_script(scene, context)
             
             # Store with scene ID
             scene_id = scene.get("id", i + 1)

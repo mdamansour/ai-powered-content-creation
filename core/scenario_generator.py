@@ -1,7 +1,6 @@
 """
 Scenario generation for creating visualization scenes from research data.
 """
-import asyncio
 from typing import Dict, List, Optional, Any
 from core.ai_engine import AIEngine
 from utils.model_selector import ModelSelector
@@ -19,7 +18,7 @@ class ScenarioGenerator:
         """
         self.engine = engine or ModelSelector.get_engine_for_task("scenario")
     
-    async def generate_scenario(
+    def generate_scenario(
         self,
         research: Dict[str, Any],
         target_duration: int = 300,
@@ -57,8 +56,8 @@ class ScenarioGenerator:
                 custom_instructions
             )
             
-            # Generate scenario with specified scene count
-            scenario = await self.engine.generate_scenario(
+            # Generate scenario with specified scene count (synchronous)
+            scenario = self.engine.generate_scenario_sync(
                 {"name": research.get("title", "Topic"), "definition": ""},
                 target_duration,
                 scene_count

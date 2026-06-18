@@ -243,6 +243,29 @@ class PlotlyRenderer(BaseRenderer):
         import tempfile
         import numpy as np
         
+        # Check if kaleido is available
+        try:
+            import kaleido
+            has_kaleido = True
+        except ImportError:
+            has_kaleido = False
+        
+        if not has_kaleido:
+            # Try to use orca as fallback
+            try:
+                pio.orca.config.executable = 'orca'
+                pio.orca.status
+                use_orca = True
+            except:
+                use_orca = False
+            
+            if not use_orca:
+                raise ImportError(
+                    "Plotly image export requires either Kaleido or Orca.\n"
+                    "Install Kaleido with: pip install kaleido\n"
+                    "Or install Orca from: https://github.com/plotly/orca"
+                )
+        
         # Calculate frames
         frames = int(duration * self.config.fps)
         
@@ -267,13 +290,16 @@ class PlotlyRenderer(BaseRenderer):
                 
                 # Save frame as image
                 frame_path = temp_path / f"frame_{i:04d}.png"
-                pio.write_image(
-                    fig,
-                    str(frame_path),
-                    width=self.config.width,
-                    height=self.config.height,
-                    format='png'
-                )
+                try:
+                    pio.write_image(
+                        fig,
+                        str(frame_path),
+                        width=self.config.width,
+                        height=self.config.height,
+                        format='png'
+                    )
+                except Exception as e:
+                    raise RuntimeError(f"Failed to export frame {i}: {str(e)}")
             
             # Convert frames to video using ffmpeg
             cmd = [
