@@ -13,6 +13,7 @@ A comprehensive tool designed specifically for math and physics educators to cre
 ### ✨ Key Features
 
 - **🤖 AI-Powered Research**: Automatic topic expansion, concept identification, and formula generation
+- **🎯 Dynamic Model Selection**: Choose the best AI model for each task (Flash for speed, Pro for quality)
 - **🎨 Multi-Library Visualizations**: Manim, Matplotlib, and Plotly for professional animations
 - **📝 Smart Script Generation**: AI-generated narration synchronized with visuals
 - **🎙️ Professional Audio**: Built-in recording studio with noise reduction and mixing
@@ -57,10 +58,12 @@ The application will open in your browser at `http://localhost:8501`
 
 ## 📖 Documentation
 
+- **[Quick Start](QUICKSTART.md)** - Get up and running in minutes
 - **[Implementation Plan](IMPLEMENTATION_PLAN.md)** - Detailed development roadmap and architecture
 - **[Technical Specification](TECHNICAL_SPECIFICATION.md)** - Code examples and API integration
 - **[Setup Guide](SETUP_GUIDE.md)** - Complete installation and configuration instructions
 - **[User Guide](USER_GUIDE.md)** - Step-by-step tutorials and best practices
+- **[Model Selection Guide](docs/MODEL_SELECTION_GUIDE.md)** - Choose the right AI model for each task
 - **[Project Summary](PROJECT_SUMMARY.md)** - Executive overview and project details
 
 ## 🎓 Use Cases

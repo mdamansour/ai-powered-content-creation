@@ -386,7 +386,7 @@ def render_settings_page():
     """Render the settings page."""
     st.title("⚙️ Settings")
     
-    tab1, tab2, tab3 = st.tabs(["API Configuration", "Application Settings", "About"])
+    tab1, tab2, tab3 = st.tabs(["API Configuration", "Model Selection", "About"])
     
     with tab1:
         st.subheader("API Configuration")
@@ -420,8 +420,95 @@ def render_settings_page():
         """)
     
     with tab2:
-        st.subheader("Application Settings")
-        st.info("Application settings coming soon!")
+        st.subheader("Model Selection")
+        
+        if not st.session_state.api_configured:
+            st.warning("⚠️ Please configure your API key first in the API Configuration tab.")
+        else:
+            try:
+                from core.ai_engine import AIEngine, GeminiModelRegistry
+                
+                # Get current provider
+                provider = APIConfig.get_active_provider()
+                
+                if provider == "gemini":
+                    st.markdown("### Available Gemini Models")
+                    
+                    # Get available models
+                    api_key = APIConfig.get_api_key("gemini")
+                    if not api_key:
+                        st.error("API key not found. Please configure it first.")
+                        return
+                    available_models = GeminiModelRegistry.get_available_models(api_key)
+                    
+                    if available_models:
+                        # Display models in expandable sections
+                        for model in available_models:
+                            with st.expander(f"**{model['name']}** - {model['id']}"):
+                                st.write(f"**Description:** {model['description']}")
+                                st.write(f"**Max Tokens:** {model['max_tokens']:,}")
+                                st.write(f"**Vision Support:** {'✓' if model['supports_vision'] else '✗'}")
+                                st.write(f"**Best For:** {', '.join(model['best_for'])}")
+                        
+                        st.markdown("---")
+                        st.markdown("### Model Recommendations by Task")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("**📚 Research & Analysis**")
+                            research_model = GeminiModelRegistry.recommend_model("research")
+                            st.info(f"Recommended: `{research_model}`")
+                            
+                            st.markdown("**📝 Script Generation**")
+                            script_model = GeminiModelRegistry.recommend_model("scripts")
+                            st.info(f"Recommended: `{script_model}`")
+                        
+                        with col2:
+                            st.markdown("**🎬 Scenario Design**")
+                            scenario_model = GeminiModelRegistry.recommend_model("scenario")
+                            st.info(f"Recommended: `{scenario_model}`")
+                            
+                            st.markdown("**⚡ Quick Tasks**")
+                            quick_model = GeminiModelRegistry.recommend_model("quick_tasks")
+                            st.info(f"Recommended: `{quick_model}`")
+                        
+                        st.markdown("---")
+                        st.markdown("### Default Model Selection")
+                        
+                        settings = get_settings()
+                        current_default = settings.ai.model
+                        
+                        model_options = [m['id'] for m in available_models]
+                        current_index = model_options.index(current_default) if current_default in model_options else 0
+                        
+                        selected_model = st.selectbox(
+                            "Default Model for All Tasks",
+                            model_options,
+                            index=current_index,
+                            help="This model will be used by default unless you specify a different one for a specific task"
+                        )
+                        
+                        if st.button("Set as Default Model"):
+                            # Update settings (note: this is runtime only, doesn't persist to .env)
+                            settings.ai.model = selected_model
+                            st.success(f"✓ Default model set to: {selected_model}")
+                            st.info("💡 Tip: You can still choose different models for specific tasks during content creation")
+                    else:
+                        st.error("Unable to fetch available models. Please check your API key.")
+                
+                elif provider == "openai":
+                    st.info("OpenAI model selection coming soon!")
+                
+                elif provider == "anthropic":
+                    st.info("Anthropic model selection coming soon!")
+                
+                else:
+                    st.warning("No AI provider configured.")
+                    
+            except Exception as e:
+                st.error(f"Error loading model information: {str(e)}")
+                st.info("Make sure your API key is valid and you have internet connection.")
     
     with tab3:
         st.subheader("About")

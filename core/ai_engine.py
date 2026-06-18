@@ -2,30 +2,194 @@
 AI Engine for content generation using Google Gemini and other providers.
 """
 import google.generativeai as genai
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import json
 import asyncio
 from config.api_keys import APIConfig
 from config.settings import get_settings
 
 
+class GeminiModelRegistry:
+    """Registry of available Gemini models with their capabilities."""
+    
+    # Task recommendations based on model naming patterns
+    TASK_RECOMMENDATIONS = {
+        "research": ["flash", "pro"],
+        "scenario": ["pro", "flash"],
+        "scripts": ["flash", "pro"],
+        "quick_tasks": ["flash"],
+        "complex_analysis": ["pro"],
+        "detailed_content": ["pro", "flash"]
+    }
+    
+    @classmethod
+    def get_available_models(cls, api_key: str) -> List[Dict[str, Any]]:
+        """
+        Get list of available models dynamically from Google's API.
+        
+        Args:
+            api_key: Gemini API key
+            
+        Returns:
+            List of available model information
+        """
+        try:
+            genai.configure(api_key=api_key)
+            
+            # Fetch models from Google's API
+            models_list = genai.list_models()
+            
+            available = []
+            for model in models_list:
+                # Only include generative models (not embedding models, etc.)
+                if 'generateContent' in model.supported_generation_methods:
+                    model_info = cls._parse_model_info(model)
+                    available.append(model_info)
+            
+            # Sort by name for consistent ordering
+            available.sort(key=lambda x: x['id'])
+            
+            return available
+            
+        except Exception as e:
+            print(f"Error fetching available models from API: {e}")
+            # Return empty list if API call fails
+            return []
+    
+    @classmethod
+    def _parse_model_info(cls, model) -> Dict[str, Any]:
+        """
+        Parse model information from Google's API response.
+        
+        Args:
+            model: Model object from genai.list_models()
+            
+        Returns:
+            Dict with parsed model information
+        """
+        model_id = model.name.replace('models/', '')
+        
+        # Determine model capabilities based on name
+        is_flash = 'flash' in model_id.lower()
+        is_pro = 'pro' in model_id.lower()
+        is_vision = model.supported_generation_methods and 'generateContent' in model.supported_generation_methods
+        
+        # Determine best use cases based on model type
+        best_for = []
+        if is_flash:
+            best_for = ["research", "scripts", "quick_tasks"]
+            description = "Fast and efficient, best for quick responses"
+        elif is_pro:
+            best_for = ["scenario", "complex_analysis", "detailed_content"]
+            description = "Most capable, best for complex reasoning"
+        else:
+            best_for = ["general"]
+            description = "General purpose model"
+        
+        # Get token limits from model metadata
+        input_token_limit = getattr(model, 'input_token_limit', 8192)
+        output_token_limit = getattr(model, 'output_token_limit', 2048)
+        
+        return {
+            "id": model_id,
+            "name": model.display_name if hasattr(model, 'display_name') else model_id,
+            "description": description,
+            "input_token_limit": input_token_limit,
+            "output_token_limit": output_token_limit,
+            "max_tokens": input_token_limit,  # For backward compatibility
+            "supports_vision": is_vision,
+            "best_for": best_for,
+            "supported_methods": model.supported_generation_methods
+        }
+    
+    @classmethod
+    def get_model_info(cls, model_id: str, api_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Get information about a specific model.
+        
+        Args:
+            model_id: Model identifier
+            api_key: Optional API key (uses configured key if not provided)
+            
+        Returns:
+            Dict with model information or None
+        """
+        try:
+            if api_key:
+                genai.configure(api_key=api_key)
+            
+            # Fetch all models and find the matching one
+            models = cls.get_available_models(api_key or "")
+            for model in models:
+                if model['id'] == model_id:
+                    return model
+            
+            return None
+        except Exception as e:
+            print(f"Error getting model info: {e}")
+            return None
+    
+    @classmethod
+    def recommend_model(cls, task_type: str, api_key: Optional[str] = None) -> Optional[str]:
+        """
+        Recommend best model for a specific task.
+        
+        Args:
+            task_type: Type of task ('research', 'scenario', 'script', etc.)
+            api_key: Optional API key
+            
+        Returns:
+            Recommended model ID or None
+        """
+        try:
+            # Get available models
+            models = cls.get_available_models(api_key or "")
+            
+            if not models:
+                return None
+            
+            # Get task preferences
+            preferences = cls.TASK_RECOMMENDATIONS.get(task_type, ["flash", "pro"])
+            
+            # Find best matching model
+            for preference in preferences:
+                for model in models:
+                    if preference in model['id'].lower():
+                        # Prefer "latest" versions
+                        if 'latest' in model['id'].lower():
+                            return model['id']
+            
+            # If no preference match, try any model with the task in best_for
+            for model in models:
+                if task_type in model.get('best_for', []):
+                    return model['id']
+            
+            # Default to first available model
+            return models[0]['id'] if models else None
+            
+        except Exception as e:
+            print(f"Error recommending model: {e}")
+            return None
+
+
 class AIEngine:
     """Main AI engine for educational content generation."""
     
-    def __init__(self, provider: str = None, api_key: str = None):
+    def __init__(self, provider: Optional[str] = None, api_key: Optional[str] = None, model: Optional[str] = None):
         """
         Initialize AI engine.
         
         Args:
             provider: AI provider name ('gemini', 'openai', 'anthropic')
             api_key: API key (optional, will use from config if not provided)
+            model: Specific model to use (optional, uses default from settings)
         """
         settings = get_settings()
         
         # Determine provider
         if provider is None:
             provider = settings.ai.provider
-        self.provider = provider.lower()
+        self.provider = provider.lower() if provider else "gemini"
         
         # Get API key
         if api_key is None:
@@ -36,22 +200,99 @@ class AIEngine:
         
         self.api_key = api_key
         self.settings = settings.ai
+        self.current_model_id = model or self.settings.model
         
         # Initialize provider-specific client
         if self.provider == "gemini":
             genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel(
-                self.settings.model,
-                generation_config={
-                    "temperature": self.settings.temperature,
-                    "max_output_tokens": self.settings.max_tokens,
-                }
-            )
-            self.chat = None
+            self._initialize_gemini_model(self.current_model_id)
         else:
             raise NotImplementedError(f"Provider {self.provider} not yet implemented")
     
-    def start_session(self, system_prompt: str = None):
+    def _initialize_gemini_model(self, model_id: str):
+        """Initialize Gemini model with given ID."""
+        self.model = genai.GenerativeModel(
+            model_id,
+            generation_config={
+                "temperature": self.settings.temperature,
+                "max_output_tokens": self.settings.max_tokens,
+            }
+        )
+        self.chat = None
+        self.current_model_id = model_id
+    
+    def switch_model(self, model_id: str) -> bool:
+        """
+        Switch to a different model.
+        
+        Args:
+            model_id: ID of the model to switch to
+            
+        Returns:
+            bool: True if successful
+        """
+        try:
+            if self.provider == "gemini":
+                self._initialize_gemini_model(model_id)
+                return True
+            else:
+                raise NotImplementedError(f"Model switching not implemented for {self.provider}")
+        except Exception as e:
+            print(f"Error switching model: {e}")
+            return False
+    
+    def get_available_models(self) -> List[Dict[str, Any]]:
+        """
+        Get list of available models for current provider.
+        
+        Returns:
+            List of model information dictionaries
+        """
+        if self.provider == "gemini":
+            return GeminiModelRegistry.get_available_models(self.api_key)
+        else:
+            return []
+    
+    def get_current_model_info(self) -> Dict[str, Any]:
+        """
+        Get information about currently active model.
+        
+        Returns:
+            Dict with model information
+        """
+        if self.provider == "gemini":
+            info = GeminiModelRegistry.get_model_info(self.current_model_id)
+            if info:
+                return {
+                    "id": self.current_model_id,
+                    "provider": self.provider,
+                    **info
+                }
+        
+        return {
+            "id": self.current_model_id,
+            "provider": self.provider,
+            "name": self.current_model_id
+        }
+    
+    def recommend_model_for_task(self, task_type: str) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """
+        Get recommended model for a specific task.
+        
+        Args:
+            task_type: Type of task ('research', 'scenario', 'script', etc.)
+            
+        Returns:
+            Tuple of (model_id, model_info)
+        """
+        if self.provider == "gemini":
+            model_id = GeminiModelRegistry.recommend_model(task_type, self.api_key)
+            info = GeminiModelRegistry.get_model_info(model_id, self.api_key) if model_id else None
+            return model_id, info
+        
+        return self.current_model_id, self.get_current_model_info()
+    
+    def start_session(self, system_prompt: Optional[str] = None):
         """
         Initialize a chat session with optional system context.
         
